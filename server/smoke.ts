@@ -9,6 +9,7 @@ const app=appModule.default;
 const {encryptSecret,decryptSecret}=await import('./secrets.js');
 const {twilioSignature}=await import('./twilio.js');
 const {db}=await import('./db.js');
+const {TwilioMediaSession}=await import('./media.js');
 const encryptedProbe=encryptSecret('test-provider-secret');
 if(encryptedProbe.includes('test-provider-secret')||decryptSecret(encryptedProbe)!=='test-provider-secret')throw new Error('Credential encryption round-trip failed');
 
@@ -19,11 +20,15 @@ const registration = await request(app).post('/api/auth/register').send({
 }).expect(201);
 const token = registration.body.token;
 const twilioToken='synthetic-auth-token-for-tests';const fakeSid='AC'+'a'.repeat(32);const connectionNow=new Date().toISOString();
-db.prepare('INSERT INTO provider_connections (id,workspace_id,provider,account_id,encrypted_secret,phone_number,status,last_checked_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run('test-twilio',registration.body.workspace.id,'twilio',fakeSid,encryptSecret(twilioToken),'+14155552671','verified',connectionNow,connectionNow,connectionNow);
+db.prepare('INSERT INTO provider_connections (id,workspace_id,provider,account_id,encrypted_secret,phone_number,status,last_checked_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(`test-twilio-${Date.now()}`,registration.body.workspace.id,'twilio',fakeSid,encryptSecret(twilioToken),'+14155552671','verified',connectionNow,connectionNow,connectionNow);
 const voiceParams={AccountSid:fakeSid,CallSid:'CA'+'b'.repeat(32),From:'+919999999999',To:'+14155552671'};const voiceUrl=`${process.env.PUBLIC_BASE_URL}/webhooks/twilio/voice/${registration.body.workspace.id}`;const signature=twilioSignature(voiceUrl,voiceParams,twilioToken);
 const voiceWebhook=await request(app).post(`/webhooks/twilio/voice/${registration.body.workspace.id}`).set('x-twilio-signature',signature).type('form').send(voiceParams).expect(200);
 if(!voiceWebhook.text.includes('/telephony/stream?token='))throw new Error('Signed voice webhook did not create a stream token');
 await request(app).post(`/webhooks/twilio/voice/${registration.body.workspace.id}`).set('x-twilio-signature','invalid').type('form').send(voiceParams).expect(403);
+const mediaSession=new TwilioMediaSession({workspaceId:registration.body.workspace.id,callSid:voiceParams.CallSid});
+mediaSession.handle(JSON.stringify({event:'start',streamSid:'MZ'+ 'c'.repeat(32),start:{callSid:voiceParams.CallSid,streamSid:'MZ'+ 'c'.repeat(32)}}));
+mediaSession.handle(JSON.stringify({event:'media',streamSid:'MZ'+ 'c'.repeat(32),media:{payload:Buffer.alloc(160).toString('base64')}}));
+const mediaResult=mediaSession.stop();if(mediaResult.audioBytes!==160)throw new Error('Media gateway audio accounting failed');
 const dashboard = await request(app).get('/api/dashboard').set('authorization',`Bearer ${token}`).expect(200);
 const toggled = await request(app).patch('/api/agent/status').set('authorization',`Bearer ${token}`).send({status:'live'}).expect(200);
 await request(app).put('/api/setup/business').set('authorization',`Bearer ${token}`).send({name:'Smoke Clinic',description:'A test clinic',phone:'',address:'',openingTime:'09:00',closingTime:'18:00',transferNumber:''}).expect(200);
@@ -72,4 +77,5 @@ console.log(JSON.stringify({
   ,credentialEncryption:true
   ,telephonyReady:telephony.body.connection?.status==='verified'
   ,signedVoiceWebhook:true
+  ,mediaGateway:true
 }));

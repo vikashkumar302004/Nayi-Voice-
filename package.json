@@ -23,13 +23,15 @@
     "react": "latest",
     "react-dom": "latest",
     "lucide-react": "latest",
-    "zod": "latest"
+    "zod": "latest",
+    "ws": "latest"
   },
   "devDependencies": {
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/express": "latest",
     "@types/supertest": "latest",
+    "@types/ws": "latest",
     "supertest": "latest",
     "tsx": "latest"
   }

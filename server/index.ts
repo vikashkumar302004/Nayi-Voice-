@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer } from 'node:http';
 import 'dotenv/config';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
@@ -9,6 +10,7 @@ import { createToken, hashPassword, readToken, verifyPassword } from './auth.js'
 import { groqCompletion, groqTranscribe } from './groq.js';
 import { decryptSecret, encryptSecret } from './secrets.js';
 import { createStreamToken, validateTwilioSignature, xmlEscape } from './twilio.js';
+import { attachTelephonyGateway } from './media.js';
 
 migrate();
 const app = express();
@@ -314,6 +316,6 @@ app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextF
 });
 
 const port = Number(process.env.API_PORT ?? 8787);
-if (process.env.NODE_ENV !== 'test') app.listen(port, () => console.log(`Nayi Voice API listening on http://127.0.0.1:${port}`));
+if (process.env.NODE_ENV !== 'test') {const server=createServer(app);attachTelephonyGateway(server);server.listen(port,()=>console.log(`Nayi Voice API and media gateway listening on http://127.0.0.1:${port}`))}
 
 export default app;
