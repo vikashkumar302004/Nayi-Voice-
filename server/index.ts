@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, migrate } from './db.js';
 import { createToken, hashPassword, readToken, verifyPassword } from './auth.js';
-import { groqCompletion } from './groq.js';
+import { groqCompletion, groqTranscribe } from './groq.js';
 
 migrate();
 const app = express();
@@ -160,6 +160,13 @@ app.post('/api/ai/respond', asyncRoute(async (req,res) => {
     }
   }
   res.json({reply:responseMessage?.content||(actions.length?'Appointment successfully booked.':'Please choose one of the available times.'),provider:'groq',actions});
+}));
+
+app.post('/api/ai/transcribe',express.raw({type:['audio/webm','audio/ogg','audio/wav','application/octet-stream'],limit:'15mb'}),asyncRoute(async(req,res)=>{
+  if(!Buffer.isBuffer(req.body)||req.body.length<100)return res.status(400).json({error:'Audio recording is empty'});
+  const text=await groqTranscribe(req.body,req.header('content-type')?.split(';')[0]??'audio/webm');
+  if(!text)return res.status(503).json({error:'Speech recognition is not configured'});
+  res.json({text,provider:'groq-whisper'});
 }));
 
 export function executeAgentTool(name:string,args:any,workspaceId:string){

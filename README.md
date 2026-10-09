@@ -29,6 +29,7 @@ The business owner uses a responsive web application to configure the agent and 
 - Call-history and customer-directory screens
 - Appointment creation, scheduling, search, and status management
 - Browser microphone and text-to-speech test experience
+- Groq Whisper multilingual audio transcription for browser voice tests
 - Groq-powered conversational responses
 - Grounded AI replies using stored services, pricing, hours, and approved FAQs
 - AI tools for checking availability and creating conflict-checked appointments

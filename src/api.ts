@@ -21,3 +21,8 @@ export const getCustomers = () => api<{customers:any[]}>('/customers');
 export const createAppointment = (body:object) => api<any>('/appointments',{method:'POST',body:JSON.stringify(body)});
 export const getAppointments = () => api<{appointments:any[]}>('/appointments');
 export const updateAppointmentStatus = (id:string,status:string) => api<any>(`/appointments/${id}/status`,{method:'PATCH',body:JSON.stringify({status})});
+export async function transcribeAudio(blob:Blob){
+  const token=localStorage.getItem('nayi_token');
+  const response=await fetch('/api/ai/transcribe',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':blob.type||'audio/webm'},body:blob});
+  const body=await response.json();if(!response.ok)throw new Error(body.error??'Transcription failed');return body as {text:string;provider:string};
+}

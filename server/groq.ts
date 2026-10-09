@@ -26,3 +26,16 @@ export async function groqChat(messages:ChatMessage[]) {
   const message=await groqCompletion(messages);
   return message?.content as string|undefined|null;
 }
+
+export async function groqTranscribe(audio:Buffer,mimeType:string){
+  const pool=keys();if(!pool.length)return null;let lastStatus=500;
+  for(let attempt=0;attempt<pool.length;attempt++){
+    const index=(cursor+attempt)%pool.length;const form=new FormData();
+    form.append('file',new Blob([audio],{type:mimeType}),mimeType.includes('ogg')?'speech.ogg':'speech.webm');
+    form.append('model','whisper-large-v3-turbo');form.append('response_format','json');form.append('temperature','0');
+    const response=await fetch('https://api.groq.com/openai/v1/audio/transcriptions',{method:'POST',headers:{authorization:`Bearer ${pool[index]}`},body:form});
+    if(response.ok){cursor=(index+1)%pool.length;const data=await response.json() as any;return data.text as string}
+    lastStatus=response.status;if(![401,403,429,500,502,503,504].includes(response.status))break;
+  }
+  throw new Error(`Transcription provider unavailable (${lastStatus})`);
+}
