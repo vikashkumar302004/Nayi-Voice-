@@ -19,3 +19,5 @@ export const addKnowledge = (body:object) => api<any>('/setup/knowledge',{method
 export const getCalls = () => api<{calls:any[]}>('/calls');
 export const getCustomers = () => api<{customers:any[]}>('/customers');
 export const createAppointment = (body:object) => api<any>('/appointments',{method:'POST',body:JSON.stringify(body)});
+export const getAppointments = () => api<{appointments:any[]}>('/appointments');
+export const updateAppointmentStatus = (id:string,status:string) => api<any>(`/appointments/${id}/status`,{method:'PATCH',body:JSON.stringify({status})});

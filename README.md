@@ -27,8 +27,10 @@ The business owner uses a responsive web application to configure the agent and 
 - Services and pricing management
 - FAQ knowledge base
 - Call-history and customer-directory screens
+- Appointment creation, scheduling, search, and status management
 - Browser microphone and text-to-speech test experience
 - Groq-powered conversational responses
+- Grounded AI replies using stored services, pricing, hours, and approved FAQs
 - Automatic provider-key failover for reliability
 - Safe local fallback when an AI provider is not configured
 - API validation and integration smoke tests

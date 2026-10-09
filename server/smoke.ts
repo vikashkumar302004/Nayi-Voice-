@@ -17,6 +17,9 @@ await request(app).put('/api/setup/business').set('authorization',`Bearer ${toke
 await request(app).post('/api/setup/services').set('authorization',`Bearer ${token}`).send({name:'Consultation',durationMinutes:30,priceRupees:500}).expect(201);
 await request(app).post('/api/setup/knowledge').set('authorization',`Bearer ${token}`).send({question:'Do you accept walk-ins?',answer:'Yes, subject to availability.'}).expect(201);
 const setup=await request(app).get('/api/setup').set('authorization',`Bearer ${token}`).expect(200);
+const appointment=await request(app).post('/api/appointments').set('authorization',`Bearer ${token}`).send({customerName:'Test Customer',service:'Consultation',startsAt:new Date(Date.now()+86400000).toISOString()}).expect(201);
+await request(app).patch(`/api/appointments/${appointment.body.id}/status`).set('authorization',`Bearer ${token}`).send({status:'completed'}).expect(200);
+const appointments=await request(app).get('/api/appointments').set('authorization',`Bearer ${token}`).expect(200);
 const ai = await request(app).post('/api/ai/respond').set('authorization',`Bearer ${token}`).send({message:'Kal appointment chahiye',history:[{role:'user',content:'Kal appointment chahiye'}]}).expect(200);
 
 console.log(JSON.stringify({
@@ -28,5 +31,6 @@ console.log(JSON.stringify({
   aiProvider:ai.body.provider,
   hasReply:Boolean(ai.body.reply),
   services:setup.body.services.length,
-  knowledge:setup.body.knowledge.length
+  knowledge:setup.body.knowledge.length,
+  appointments:appointments.body.appointments.length
 }));

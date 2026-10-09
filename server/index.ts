@@ -75,6 +75,18 @@ app.post('/api/appointments', (req,res) => {
   res.status(201).json({id:appointment.id,...input,status:'confirmed'});
 });
 
+app.get('/api/appointments', (_req,res) => {
+  const rows=db.prepare('SELECT id,customer_name,service,starts_at,status,created_by FROM appointments WHERE workspace_id=? ORDER BY starts_at').all(res.locals.auth.workspaceId);
+  res.json({appointments:rows});
+});
+
+app.patch('/api/appointments/:id/status', (req,res) => {
+  const input=z.object({status:z.enum(['confirmed','completed','cancelled','no_show'])}).parse(req.body);
+  const result=db.prepare('UPDATE appointments SET status=? WHERE id=? AND workspace_id=?').run(input.status,req.params.id,res.locals.auth.workspaceId);
+  if(!result.changes)return res.status(404).json({error:'Appointment not found'});
+  res.json({id:req.params.id,status:input.status});
+});
+
 app.patch('/api/agent/status', (req,res) => {
   const status = z.object({status:z.enum(['live','paused'])}).parse(req.body).status;
   const workspaceId = res.locals.auth.workspaceId as string;
@@ -123,7 +135,12 @@ app.post('/api/setup/knowledge', (req,res) => {
 app.post('/api/ai/respond', asyncRoute(async (req,res) => {
   const input=z.object({message:z.string().min(1).max(1000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string().max(2000)})).max(12).default([])}).parse(req.body);
   const agent=db.prepare('SELECT system_prompt FROM agents WHERE workspace_id=? LIMIT 1').get(res.locals.auth.workspaceId) as any;
-  const reply=await groqChat([{role:'system',content:`${agent?.system_prompt??''} Reply naturally in the caller's language. Keep phone replies under 3 short sentences. Never claim an action succeeded unless a tool confirmed it.`},...input.history.slice(-8)]);
+  const workspace=db.prepare('SELECT name,industry FROM workspaces WHERE id=?').get(res.locals.auth.workspaceId) as any;
+  const settings=db.prepare('SELECT description,address,opening_time,closing_time FROM business_settings WHERE workspace_id=?').get(res.locals.auth.workspaceId) as any;
+  const services=db.prepare('SELECT name,duration_minutes,price_paise FROM services WHERE workspace_id=? AND active=1 LIMIT 30').all(res.locals.auth.workspaceId) as any[];
+  const knowledge=db.prepare('SELECT question,answer FROM knowledge_entries WHERE workspace_id=? LIMIT 40').all(res.locals.auth.workspaceId) as any[];
+  const businessContext=JSON.stringify({business:workspace,details:settings,services:services.map(s=>({...s,price_rupees:s.price_paise==null?null:s.price_paise/100})),approvedAnswers:knowledge});
+  const reply=await groqChat([{role:'system',content:`${agent?.system_prompt??''}\nVerified business context: ${businessContext}\nReply naturally in the caller's language. Keep phone replies under 3 short sentences. Use only verified context for business facts. Never invent availability, prices, or policies. Never claim a booking or action succeeded unless a tool confirmed it.`},...input.history.slice(-8)]);
   if(!reply) return res.json({reply:'Bilkul. Main aapki request note kar rahi hoon. Live AI enable hote hi main availability check karke booking bhi complete kar sakungi.',provider:'local-demo'});
   res.json({reply,provider:'groq'});
 }));

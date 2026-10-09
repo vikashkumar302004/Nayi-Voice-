@@ -5,13 +5,15 @@ import './styles.css';
 import './auth.css';
 import './studio.css';
 import './operations.css';
+import './appointments.css';
 import { AuthScreen } from './AuthScreen';
 import { VoiceLab } from './VoiceLab';
 import { Session, setAgentStatus } from './api';
 import { AgentStudio } from './AgentStudio';
 import { OperationsPage } from './OperationsPage';
+import { AppointmentsPage } from './AppointmentsPage';
 
-type NavKey = 'Overview' | 'Calls' | 'Agent' | 'Customers' | 'Automations';
+type NavKey = 'Overview' | 'Calls' | 'Agent' | 'Customers' | 'Appointments' | 'Automations';
 
 const calls = [
   { name: 'Ananya Sharma', phone: '+91 98••• 4210', intent: 'Appointment booked', time: '2 min ago', duration: '03:42', tone: 'positive' },
@@ -23,6 +25,7 @@ const calls = [
 const nav: { label: NavKey; icon: React.ElementType }[] = [
   { label: 'Overview', icon: LayoutDashboard }, { label: 'Calls', icon: PhoneCall },
   { label: 'Agent', icon: Sparkles }, { label: 'Customers', icon: Users },
+  { label: 'Appointments', icon: CalendarDays },
   { label: 'Automations', icon: WandSparkles },
 ];
 
@@ -44,7 +47,7 @@ function App() {
     <main>
       <header><div><span className="eyebrow">FRIDAY, 9 OCTOBER</span><h1>Good morning.</h1><p>Your AI receptionist is handling calls while you focus on customers.</p></div><div className="header-actions"><button className="ghost"><CalendarDays size={17}/>Last 7 days<ChevronDown size={15}/></button><button className="primary" onClick={()=>setVoiceOpen(true)}><Phone size={17}/>Test your agent</button></div></header>
 
-      {active==='Agent'?<AgentStudio/>:active==='Calls'||active==='Customers'?<OperationsPage view={active}/>:<><section className="agent-strip">
+      {active==='Agent'?<AgentStudio/>:active==='Calls'||active==='Customers'?<OperationsPage view={active}/>:active==='Appointments'?<AppointmentsPage/>:<><section className="agent-strip">
         <div className="agent-icon"><span></span><Activity size={22}/></div>
         <div className="agent-copy"><div><strong>Meera</strong><span className={live ? 'status live' : 'status'}>{live ? 'Live' : 'Paused'}</span></div><p>Hindi + English · Front desk agent</p></div>
         <div className="agent-stats"><span><b>18</b> calls today</span><i></i><span><b>7</b> bookings</span><i></i><span><b>96%</b> answered</span></div>
