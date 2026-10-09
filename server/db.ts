@@ -74,6 +74,12 @@ export function migrate() {
       metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
       FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
     );
+    CREATE TABLE IF NOT EXISTS provider_connections (
+      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, provider TEXT NOT NULL,
+      account_id TEXT NOT NULL, encrypted_secret TEXT NOT NULL, phone_number TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unverified', last_checked_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      FOREIGN KEY(workspace_id) REFERENCES workspaces(id), UNIQUE(workspace_id,provider)
+    );
     CREATE INDEX IF NOT EXISTS calls_workspace_started ON calls(workspace_id, started_at DESC);
     CREATE INDEX IF NOT EXISTS appointments_workspace_start ON appointments(workspace_id, starts_at);
     CREATE INDEX IF NOT EXISTS services_workspace ON services(workspace_id);
@@ -81,6 +87,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS automation_rules_workspace ON automation_rules(workspace_id);
     CREATE INDEX IF NOT EXISTS automation_jobs_schedule ON automation_jobs(workspace_id,status,scheduled_for);
     CREATE INDEX IF NOT EXISTS audit_workspace_created ON audit_logs(workspace_id,created_at DESC);
+    CREATE INDEX IF NOT EXISTS providers_workspace ON provider_connections(workspace_id);
   `);
   db.exec(`
     INSERT INTO automation_rules (id,workspace_id,type,name,enabled,delay_minutes,channel,message_template,created_at,updated_at)

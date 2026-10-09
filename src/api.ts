@@ -33,3 +33,6 @@ export const getAutomations = () => api<any>('/automations');
 export const updateAutomation = (id:string,body:object) => api<any>(`/automations/${id}`,{method:'PATCH',body:JSON.stringify(body)});
 export const getSettings = () => api<any>('/settings');
 export const changePassword = (body:object) => api<any>('/settings/password',{method:'POST',body:JSON.stringify(body)});
+export const getTelephony = () => api<any>('/integrations/telephony');
+export const connectTelephony = (body:object) => api<any>('/integrations/telephony',{method:'PUT',body:JSON.stringify(body)});
+export const testTelephony = () => api<any>('/integrations/telephony/test',{method:'POST'});

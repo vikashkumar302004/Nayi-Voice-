@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { db, migrate } from './db.js';
 import { createToken, hashPassword, readToken, verifyPassword } from './auth.js';
 import { groqCompletion, groqTranscribe } from './groq.js';
+import { decryptSecret, encryptSecret } from './secrets.js';
 
 migrate();
 const app = express();
@@ -82,6 +83,30 @@ app.post('/api/settings/password',authLimiter,(req,res) => {
 });
 
 app.get('/api/security/session', (_req,res) => res.json({valid:true,userId:res.locals.auth.sub,workspaceId:res.locals.auth.workspaceId,expiresAt:res.locals.auth.exp}));
+
+app.get('/api/integrations/telephony', (_req,res) => {
+  const connection=db.prepare('SELECT id,provider,account_id,phone_number,status,last_checked_at,created_at FROM provider_connections WHERE workspace_id=? AND provider=?').get(res.locals.auth.workspaceId,'twilio');
+  res.json({connection:connection??null,requirements:{publicBaseUrl:Boolean(process.env.PUBLIC_BASE_URL),webhookPath:'/webhooks/twilio/voice',streamPath:'/telephony/stream'}});
+});
+
+app.put('/api/integrations/telephony',authLimiter,asyncRoute(async(req,res)=>{
+  const input=z.object({accountSid:z.string().regex(/^AC[a-fA-F0-9]{32}$/,'Invalid Twilio Account SID'),authToken:z.string().min(20).max(100),phoneNumber:z.string().regex(/^\+[1-9]\d{7,14}$/,'Use E.164 format such as +14155552671')}).parse(req.body);
+  const authHeader=`Basic ${Buffer.from(`${input.accountSid}:${input.authToken}`).toString('base64')}`;
+  const check=await fetch(`https://api.twilio.com/2010-04-01/Accounts/${input.accountSid}.json`,{headers:{authorization:authHeader}});
+  if(!check.ok)return res.status(400).json({error:check.status===401?'Twilio credentials are invalid':`Twilio verification failed (${check.status})`});
+  const now=new Date().toISOString(),id=randomUUID(),encrypted=encryptSecret(input.authToken);
+  db.prepare(`INSERT INTO provider_connections (id,workspace_id,provider,account_id,encrypted_secret,phone_number,status,last_checked_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(workspace_id,provider) DO UPDATE SET account_id=excluded.account_id,encrypted_secret=excluded.encrypted_secret,phone_number=excluded.phone_number,status='verified',last_checked_at=excluded.last_checked_at,updated_at=excluded.updated_at`).run(id,res.locals.auth.workspaceId,'twilio',input.accountSid,encrypted,input.phoneNumber,'verified',now,now,now);
+  audit(res.locals.auth.workspaceId,String(res.locals.auth.sub),'telephony_connected','integration',id,{provider:'twilio',phoneNumber:input.phoneNumber.slice(0,4)+'***'});
+  res.json({connected:true,status:'verified'});
+}));
+
+app.post('/api/integrations/telephony/test',authLimiter,asyncRoute(async(_req,res)=>{
+  const row=db.prepare('SELECT account_id,encrypted_secret FROM provider_connections WHERE workspace_id=? AND provider=?').get(res.locals.auth.workspaceId,'twilio') as any;
+  if(!row)return res.status(404).json({error:'Twilio is not connected'});
+  const check=await fetch(`https://api.twilio.com/2010-04-01/Accounts/${row.account_id}.json`,{headers:{authorization:`Basic ${Buffer.from(`${row.account_id}:${decryptSecret(row.encrypted_secret)}`).toString('base64')}`}});
+  const status=check.ok?'verified':'error';db.prepare('UPDATE provider_connections SET status=?,last_checked_at=?,updated_at=? WHERE workspace_id=? AND provider=?').run(status,new Date().toISOString(),new Date().toISOString(),res.locals.auth.workspaceId,'twilio');
+  if(!check.ok)return res.status(400).json({error:'Connection test failed'});res.json({ok:true,status});
+}));
 
 app.get('/api/calls', (_req,res) => {
   const workspaceId=res.locals.auth.workspaceId as string;

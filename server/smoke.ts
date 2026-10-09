@@ -5,6 +5,9 @@ const [{ default: request }, appModule] = await Promise.all([
   import('supertest'), import('./index.js')
 ]);
 const app=appModule.default;
+const {encryptSecret,decryptSecret}=await import('./secrets.js');
+const encryptedProbe=encryptSecret('test-provider-secret');
+if(encryptedProbe.includes('test-provider-secret')||decryptSecret(encryptedProbe)!=='test-provider-secret')throw new Error('Credential encryption round-trip failed');
 
 const health = await request(app).get('/api/health').expect(200);
 const email = `smoke-${Date.now()}@nayi.local`;
@@ -37,6 +40,7 @@ const settings=await request(app).get('/api/settings').set('authorization',`Bear
 await request(app).post('/api/settings/password').set('authorization',`Bearer ${token}`).send({currentPassword:'SecurePass123!',newPassword:'NewSecurePass456!'}).expect(200);
 await request(app).post('/api/auth/login').send({email,password:'NewSecurePass456!'}).expect(200);
 const auditLog=await request(app).get('/api/settings').set('authorization',`Bearer ${token}`).expect(200);
+const telephony=await request(app).get('/api/integrations/telephony').set('authorization',`Bearer ${token}`).expect(200);
 
 console.log(JSON.stringify({
   health:health.body.ok,
@@ -56,4 +60,6 @@ console.log(JSON.stringify({
   ,queuedJobs:automations.body.jobs.length
   ,securityHeaders:Boolean(settings.headers['content-security-policy'])
   ,auditEvents:auditLog.body.audit.length
+  ,credentialEncryption:true
+  ,telephonyReady:telephony.body.connection===null
 }));
