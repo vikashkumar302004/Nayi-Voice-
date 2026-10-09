@@ -10,6 +10,9 @@ const {encryptSecret,decryptSecret}=await import('./secrets.js');
 const {twilioSignature}=await import('./twilio.js');
 const {db}=await import('./db.js');
 const {TwilioMediaSession}=await import('./media.js');
+const {mulawToPcm16,pcm16ToMulaw,resamplePcm16}=await import('./audio.js');
+const mulawProbe=Buffer.alloc(160,0xff),pcmProbe=mulawToPcm16(mulawProbe),pcm16kProbe=resamplePcm16(pcmProbe,8000,16000),roundTripProbe=pcm16ToMulaw(resamplePcm16(pcm16kProbe,16000,8000));
+if(pcmProbe.length!==320||pcm16kProbe.length!==640||roundTripProbe.length!==160)throw new Error('Telephony audio conversion failed');
 const encryptedProbe=encryptSecret('test-provider-secret');
 if(encryptedProbe.includes('test-provider-secret')||decryptSecret(encryptedProbe)!=='test-provider-secret')throw new Error('Credential encryption round-trip failed');
 
@@ -78,4 +81,5 @@ console.log(JSON.stringify({
   ,telephonyReady:telephony.body.connection?.status==='verified'
   ,signedVoiceWebhook:true
   ,mediaGateway:true
+  ,audioConversion:true
 }));
