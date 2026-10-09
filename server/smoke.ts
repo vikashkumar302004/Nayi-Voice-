@@ -1,9 +1,10 @@
 process.env.NODE_ENV = 'test';
 process.env.DATABASE_FILE = './data/smoke-test.db';
 
-const [{ default: request }, { default: app }] = await Promise.all([
+const [{ default: request }, appModule] = await Promise.all([
   import('supertest'), import('./index.js')
 ]);
+const app=appModule.default;
 
 const health = await request(app).get('/api/health').expect(200);
 const email = `smoke-${Date.now()}@nayi.local`;
@@ -21,6 +22,9 @@ const appointment=await request(app).post('/api/appointments').set('authorizatio
 await request(app).patch(`/api/appointments/${appointment.body.id}/status`).set('authorization',`Bearer ${token}`).send({status:'completed'}).expect(200);
 const appointments=await request(app).get('/api/appointments').set('authorization',`Bearer ${token}`).expect(200);
 const ai = await request(app).post('/api/ai/respond').set('authorization',`Bearer ${token}`).send({message:'Kal appointment chahiye',history:[{role:'user',content:'Kal appointment chahiye'}]}).expect(200);
+const bookingDate=new Date(Date.now()+172800000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+const toolBooking=appModule.executeAgentTool('book_appointment',{customerName:'Riya',service:'Consultation',startsAt:`${bookingDate}T10:00:00+05:30`},registration.body.workspace.id);
+if(!toolBooking.success)throw new Error(`Booking tool failed: ${JSON.stringify(toolBooking)}`);
 
 console.log(JSON.stringify({
   health:health.body.ok,
@@ -33,4 +37,5 @@ console.log(JSON.stringify({
   services:setup.body.services.length,
   knowledge:setup.body.knowledge.length,
   appointments:appointments.body.appointments.length
+  ,aiBooking:true
 }));

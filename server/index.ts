@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, migrate } from './db.js';
 import { createToken, hashPassword, readToken, verifyPassword } from './auth.js';
-import { groqChat } from './groq.js';
+import { groqCompletion } from './groq.js';
 
 migrate();
 const app = express();
@@ -140,10 +140,52 @@ app.post('/api/ai/respond', asyncRoute(async (req,res) => {
   const services=db.prepare('SELECT name,duration_minutes,price_paise FROM services WHERE workspace_id=? AND active=1 LIMIT 30').all(res.locals.auth.workspaceId) as any[];
   const knowledge=db.prepare('SELECT question,answer FROM knowledge_entries WHERE workspace_id=? LIMIT 40').all(res.locals.auth.workspaceId) as any[];
   const businessContext=JSON.stringify({business:workspace,details:settings,services:services.map(s=>({...s,price_rupees:s.price_paise==null?null:s.price_paise/100})),approvedAnswers:knowledge});
-  const reply=await groqChat([{role:'system',content:`${agent?.system_prompt??''}\nVerified business context: ${businessContext}\nReply naturally in the caller's language. Keep phone replies under 3 short sentences. Use only verified context for business facts. Never invent availability, prices, or policies. Never claim a booking or action succeeded unless a tool confirmed it.`},...input.history.slice(-8)]);
-  if(!reply) return res.json({reply:'Bilkul. Main aapki request note kar rahi hoon. Live AI enable hote hi main availability check karke booking bhi complete kar sakungi.',provider:'local-demo'});
-  res.json({reply,provider:'groq'});
+  const system=`${agent?.system_prompt??''}\nCurrent time: ${new Date().toISOString()}. Verified business context: ${businessContext}\nReply naturally in the caller's language. Keep phone replies under 3 short sentences. Use only verified context for business facts. Never invent availability, prices, or policies. Use tools for availability and bookings. Never claim a booking succeeded unless book_appointment returned success.`;
+  const tools=[
+    {type:'function',function:{name:'check_availability',description:'Check open appointment slots for a service on a date.',parameters:{type:'object',properties:{service:{type:'string'},date:{type:'string',description:'Date in YYYY-MM-DD format'}},required:['service','date'],additionalProperties:false}}},
+    {type:'function',function:{name:'book_appointment',description:'Book an appointment only after the caller provided their name, service and exact chosen start time.',parameters:{type:'object',properties:{customerName:{type:'string'},service:{type:'string'},startsAt:{type:'string',description:'ISO 8601 timestamp with timezone offset'}},required:['customerName','service','startsAt'],additionalProperties:false}}}
+  ];
+  const messages:any[]=[{role:'system',content:system},...input.history.slice(-8)];
+  const actions:string[]=[];
+  let responseMessage:any;
+  for(let round=0;round<3;round++){
+    responseMessage=await groqCompletion(messages,tools);
+    if(!responseMessage)return res.json({reply:'Main abhi AI service se connect nahi kar pa rahi. Kripya thodi der baad try karein.',provider:'local-demo'});
+    if(!responseMessage.tool_calls?.length)break;
+    messages.push(responseMessage);
+    for(const call of responseMessage.tool_calls.slice(0,2)){
+      let result:any;
+      try{const args=JSON.parse(call.function.arguments||'{}');result=executeAgentTool(call.function.name,args,res.locals.auth.workspaceId);if(result?.appointmentId)actions.push('appointment_booked')}catch(error){result={success:false,error:error instanceof Error?error.message:'Tool failed'}}
+      messages.push({role:'tool',tool_call_id:call.id,name:call.function.name,content:JSON.stringify(result)});
+    }
+  }
+  res.json({reply:responseMessage?.content||(actions.length?'Appointment successfully booked.':'Please choose one of the available times.'),provider:'groq',actions});
 }));
+
+export function executeAgentTool(name:string,args:any,workspaceId:string){
+  if(name==='check_availability'){
+    const service=db.prepare('SELECT name,duration_minutes FROM services WHERE workspace_id=? AND lower(name)=lower(?) AND active=1').get(workspaceId,args.service) as any;
+    if(!service)return {success:false,error:'Service not found'};
+    const settings=db.prepare('SELECT opening_time,closing_time FROM business_settings WHERE workspace_id=?').get(workspaceId) as any;
+    const start=new Date(`${args.date}T${settings?.opening_time??'09:00'}:00+05:30`);const close=new Date(`${args.date}T${settings?.closing_time??'18:00'}:00+05:30`);
+    if(Number.isNaN(start.getTime()))return {success:false,error:'Invalid date'};
+    const existing=db.prepare(`SELECT starts_at FROM appointments WHERE workspace_id=? AND status='confirmed' AND starts_at>=? AND starts_at<?`).all(workspaceId,start.toISOString(),close.toISOString()) as any[];
+    const occupied=new Set(existing.map(x=>new Date(x.starts_at).getTime()));const slots:string[]=[];
+    for(let time=start.getTime();time+service.duration_minutes*60000<=close.getTime();time+=30*60000){if(time>Date.now()&&!occupied.has(time))slots.push(new Date(time).toISOString());if(slots.length===5)break}
+    return {success:true,service:service.name,durationMinutes:service.duration_minutes,availableSlots:slots};
+  }
+  if(name==='book_appointment'){
+    const service=db.prepare('SELECT name,duration_minutes FROM services WHERE workspace_id=? AND lower(name)=lower(?) AND active=1').get(workspaceId,args.service) as any;
+    if(!service)return {success:false,error:'Service not found'};
+    const startsAt=new Date(args.startsAt);if(Number.isNaN(startsAt.getTime())||startsAt.getTime()<=Date.now())return {success:false,error:'Appointment time must be in the future'};
+    const endsAt=new Date(startsAt.getTime()+service.duration_minutes*60000);
+    const conflict=db.prepare(`SELECT id FROM appointments WHERE workspace_id=? AND status='confirmed' AND starts_at>=? AND starts_at<? LIMIT 1`).get(workspaceId,new Date(startsAt.getTime()-service.duration_minutes*60000+1).toISOString(),endsAt.toISOString());
+    if(conflict)return {success:false,error:'That time is no longer available'};
+    const id=randomUUID();db.prepare('INSERT INTO appointments (id,workspace_id,customer_name,service,starts_at,status,created_by) VALUES (?,?,?,?,?,?,?)').run(id,workspaceId,String(args.customerName).slice(0,80),service.name,startsAt.toISOString(),'confirmed','ai');
+    return {success:true,appointmentId:id,customerName:args.customerName,service:service.name,startsAt:startsAt.toISOString()};
+  }
+  return {success:false,error:'Unknown tool'};
+}
 
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction) => {
   if (error instanceof z.ZodError) return res.status(400).json({ error:'Invalid request',details:error.issues });

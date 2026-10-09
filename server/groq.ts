@@ -4,7 +4,7 @@ const keys = () => (process.env.GROQ_API_KEYS ?? process.env.GROQ_API_KEY ?? '')
   .split(',').map(key => key.trim()).filter(Boolean);
 let cursor = 0;
 
-export async function groqChat(messages:ChatMessage[]) {
+export async function groqCompletion(messages:any[], tools?:any[]) {
   const pool = keys();
   if (!pool.length) return null;
   let lastStatus = 500;
@@ -12,11 +12,17 @@ export async function groqChat(messages:ChatMessage[]) {
     const index=(cursor+attempt)%pool.length;
     const response=await fetch('https://api.groq.com/openai/v1/chat/completions',{
       method:'POST',headers:{authorization:`Bearer ${pool[index]}`,'content-type':'application/json'},
-      body:JSON.stringify({model:process.env.GROQ_MODEL??'openai/gpt-oss-20b',temperature:.3,max_completion_tokens:180,messages})
+      body:JSON.stringify({model:process.env.GROQ_MODEL??'openai/gpt-oss-20b',temperature:.2,max_completion_tokens:260,messages,...(tools?.length?{tools,tool_choice:'auto'}:{})})
     });
-    if(response.ok){cursor=(index+1)%pool.length;const data=await response.json() as any;return data.choices?.[0]?.message?.content as string|undefined}
+    if(response.ok){cursor=(index+1)%pool.length;const data=await response.json() as any;return data.choices?.[0]?.message}
     lastStatus=response.status;
+    if(response.status===400){const detail=(await response.text()).slice(0,500);throw new Error(`AI provider rejected request (400): ${detail}`)}
     if(![401,403,429,500,502,503,504].includes(response.status)) break;
   }
   throw new Error(`AI provider unavailable (${lastStatus})`);
+}
+
+export async function groqChat(messages:ChatMessage[]) {
+  const message=await groqCompletion(messages);
+  return message?.content as string|undefined|null;
 }

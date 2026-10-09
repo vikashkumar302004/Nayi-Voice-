@@ -31,6 +31,7 @@ The business owner uses a responsive web application to configure the agent and 
 - Browser microphone and text-to-speech test experience
 - Groq-powered conversational responses
 - Grounded AI replies using stored services, pricing, hours, and approved FAQs
+- AI tools for checking availability and creating conflict-checked appointments
 - Automatic provider-key failover for reliability
 - Safe local fallback when an AI provider is not configured
 - API validation and integration smoke tests
