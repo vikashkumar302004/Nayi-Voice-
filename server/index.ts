@@ -1,5 +1,7 @@
 import express from 'express';
 import 'dotenv/config';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { db, migrate } from './db.js';
@@ -8,8 +10,12 @@ import { groqCompletion, groqTranscribe } from './groq.js';
 
 migrate();
 const app = express();
+app.set('trust proxy',1);
+app.use(helmet({crossOriginResourcePolicy:{policy:'same-site'}}));
 app.use(express.json({ limit: '64kb' }));
 app.disable('x-powered-by');
+const authLimiter=rateLimit({windowMs:15*60*1000,limit:30,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'Too many authentication attempts. Please try again later.'}});
+const aiLimiter=rateLimit({windowMs:60*1000,limit:30,standardHeaders:'draft-8',legacyHeaders:false,message:{error:'Voice AI rate limit reached. Please wait a moment.'}});
 
 const asyncRoute = (fn: express.RequestHandler) => (req: express.Request, res: express.Response, next: express.NextFunction) => Promise.resolve(fn(req, res, next)).catch(next);
 const registerSchema = z.object({ businessName: z.string().min(2).max(80), industry: z.string().min(2).max(40), name: z.string().min(2).max(60), email: z.string().email(), password: z.string().min(8).max(100) });
@@ -17,7 +23,7 @@ const loginSchema = z.object({ email: z.string().email(), password: z.string().m
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'nayi-voice-api', timestamp: new Date().toISOString() }));
 
-app.post('/api/auth/register', asyncRoute(async (req, res) => {
+app.post('/api/auth/register',authLimiter,asyncRoute(async (req, res) => {
   const input = registerSchema.parse(req.body);
   const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(input.email.toLowerCase());
   if (exists) return res.status(409).json({ error: 'Email already registered' });
@@ -37,7 +43,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   res.status(201).json({ token: await createToken(userId,workspaceId,'owner'), user: { id:userId,name:input.name,email:input.email }, workspace: { id:workspaceId,name:input.businessName,industry:input.industry } });
 }));
 
-app.post('/api/auth/login', asyncRoute(async (req, res) => {
+app.post('/api/auth/login',authLimiter,asyncRoute(async (req, res) => {
   const input = loginSchema.parse(req.body);
   const user = db.prepare('SELECT id, workspace_id, name, email, password_hash, role FROM users WHERE email = ?').get(input.email.toLowerCase()) as any;
   if (!user || !verifyPassword(input.password,user.password_hash)) return res.status(401).json({ error:'Invalid email or password' });
@@ -58,6 +64,24 @@ app.get('/api/dashboard', (req,res) => {
   const metrics = db.prepare(`SELECT COUNT(*) totalCalls, COALESCE(SUM(duration_seconds),0) totalSeconds, SUM(CASE WHEN outcome='appointment_booked' THEN 1 ELSE 0 END) bookings, SUM(CASE WHEN outcome='human_handoff' THEN 1 ELSE 0 END) handoffs FROM calls WHERE workspace_id=?`).get(workspaceId);
   res.json({agent,calls,appointments,metrics});
 });
+
+app.get('/api/settings', (_req,res) => {
+  const auth=res.locals.auth;const user=db.prepare('SELECT id,name,email,role,created_at FROM users WHERE id=? AND workspace_id=?').get(auth.sub,auth.workspaceId);
+  const workspace=db.prepare('SELECT id,name,industry,timezone,created_at FROM workspaces WHERE id=?').get(auth.workspaceId);
+  const audit=db.prepare('SELECT id,action,entity_type,metadata,created_at FROM audit_logs WHERE workspace_id=? ORDER BY created_at DESC LIMIT 20').all(auth.workspaceId);
+  res.json({user,workspace,audit,security:{passwordHashing:'scrypt',tokenExpiry:'7 days',rateLimits:true,securityHeaders:true}});
+});
+
+app.post('/api/settings/password',authLimiter,(req,res) => {
+  const input=z.object({currentPassword:z.string().min(8),newPassword:z.string().min(10).max(100)}).parse(req.body);
+  const auth=res.locals.auth;const user=db.prepare('SELECT id,password_hash FROM users WHERE id=? AND workspace_id=?').get(auth.sub,auth.workspaceId) as any;
+  if(!user||!verifyPassword(input.currentPassword,user.password_hash))return res.status(401).json({error:'Current password is incorrect'});
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(input.newPassword),user.id);
+  audit(auth.workspaceId,String(auth.sub),'password_changed','user',user.id,{});
+  res.json({changed:true});
+});
+
+app.get('/api/security/session', (_req,res) => res.json({valid:true,userId:res.locals.auth.sub,workspaceId:res.locals.auth.workspaceId,expiresAt:res.locals.auth.exp}));
 
 app.get('/api/calls', (_req,res) => {
   const workspaceId=res.locals.auth.workspaceId as string;
@@ -168,7 +192,7 @@ app.post('/api/setup/knowledge', (req,res) => {
   res.status(201).json({id:entry.id,...input});
 });
 
-app.post('/api/ai/respond', asyncRoute(async (req,res) => {
+app.post('/api/ai/respond',aiLimiter,asyncRoute(async (req,res) => {
   const input=z.object({message:z.string().min(1).max(1000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string().max(2000)})).max(12).default([])}).parse(req.body);
   const agent=db.prepare('SELECT system_prompt FROM agents WHERE workspace_id=? LIMIT 1').get(res.locals.auth.workspaceId) as any;
   const workspace=db.prepare('SELECT name,industry FROM workspaces WHERE id=?').get(res.locals.auth.workspaceId) as any;
@@ -204,6 +228,10 @@ app.post('/api/ai/transcribe',express.raw({type:['audio/webm','audio/ogg','audio
   if(!text)return res.status(503).json({error:'Speech recognition is not configured'});
   res.json({text,provider:'groq-whisper'});
 }));
+
+function audit(workspaceId:string,userId:string|undefined,action:string,entityType:string,entityId:string|undefined,metadata:object){
+  db.prepare('INSERT INTO audit_logs (id,workspace_id,user_id,action,entity_type,entity_id,metadata,created_at) VALUES (?,?,?,?,?,?,?,?)').run(randomUUID(),workspaceId,userId??null,action,entityType,entityId??null,JSON.stringify(metadata),new Date().toISOString());
+}
 
 export function executeAgentTool(name:string,args:any,workspaceId:string){
   if(name==='check_availability'){

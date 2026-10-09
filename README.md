@@ -34,6 +34,7 @@ The business owner uses a responsive web application to configure the agent and 
 - Live dashboard metrics backed by recorded conversations
 - Configurable appointment reminders, missed-call follow-ups, and post-call workflows
 - Safe automation queue that does not fake external message delivery
+- Security headers, authentication/AI rate limits, password changes, and audit logs
 - Groq-powered conversational responses
 - Grounded AI replies using stored services, pricing, hours, and approved FAQs
 - AI tools for checking availability and creating conflict-checked appointments

@@ -14,6 +14,8 @@
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "express": "latest",
+    "express-rate-limit": "latest",
+    "helmet": "latest",
     "dotenv": "latest",
     "jose": "latest",
     "vite": "latest",

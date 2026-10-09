@@ -7,6 +7,7 @@ import './studio.css';
 import './operations.css';
 import './appointments.css';
 import './automations.css';
+import './settings.css';
 import { AuthScreen } from './AuthScreen';
 import { VoiceLab } from './VoiceLab';
 import { getDashboard, Session, setAgentStatus } from './api';
@@ -14,8 +15,11 @@ import { AgentStudio } from './AgentStudio';
 import { OperationsPage } from './OperationsPage';
 import { AppointmentsPage } from './AppointmentsPage';
 import { AutomationsPage } from './AutomationsPage';
-
-type NavKey = 'Overview' | 'Calls' | 'Agent' | 'Customers' | 'Appointments' | 'Automations';
+import { SettingsPage } from './SettingsPage';
+//use for random   caalll  and fornow we can use this for the calls and other things as well
+// some of the data is hardcoded for now but we can use the api to get the data and then use it in the components
+// we ca gs e
+type NavKey = 'Overview' | 'Calls' | 'Agent' | 'Customers' | 'Appointments' | 'Automations' | 'Settings';
 
 const calls = [
   { name: 'Ananya Sharma', phone: '+91 98••• 4210', intent: 'Appointment booked', time: '2 min ago', duration: '03:42', tone: 'positive' },
@@ -31,7 +35,7 @@ const nav: { label: NavKey; icon: React.ElementType }[] = [
   { label: 'Automations', icon: WandSparkles },
 ];
 
-function App() {
+function App({onLogout}:{onLogout:()=>void}) {
   const [active, setActive] = useState<NavKey>('Overview');
   const [live, setLive] = useState(true);
   const [voiceOpen,setVoiceOpen]=useState(false);
@@ -43,7 +47,7 @@ function App() {
       <div className="brand"><div className="brand-mark"><PhoneCall size={19}/></div><span>Nayi Voice</span><b>beta</b></div>
       <nav>{nav.map(({label, icon: Icon}) => <button key={label} className={active === label ? 'active' : ''} onClick={() => setActive(label)}><Icon size={18}/><span>{label}</span></button>)}</nav>
       <div className="side-bottom">
-        <button><Settings size={18}/>Settings</button>
+        <button onClick={()=>setActive('Settings')}><Settings size={18}/>Settings</button>
         <div className="profile"><div className="avatar">AK</div><div><strong>Arjun Kapoor</strong><small>Aura Clinic</small></div><ChevronDown size={16}/></div>
       </div>
     </aside>
@@ -51,7 +55,7 @@ function App() {
     <main>
       <header><div><span className="eyebrow">FRIDAY, 9 OCTOBER</span><h1>Good morning.</h1><p>Your AI receptionist is handling calls while you focus on customers.</p></div><div className="header-actions"><button className="ghost"><CalendarDays size={17}/>Last 7 days<ChevronDown size={15}/></button><button className="primary" onClick={()=>setVoiceOpen(true)}><Phone size={17}/>Test your agent</button></div></header>
 
-      {active==='Agent'?<AgentStudio/>:active==='Calls'||active==='Customers'?<OperationsPage view={active}/>:active==='Appointments'?<AppointmentsPage/>:active==='Automations'?<AutomationsPage/>:<><section className="agent-strip">
+      {active==='Agent'?<AgentStudio/>:active==='Calls'||active==='Customers'?<OperationsPage view={active}/>:active==='Appointments'?<AppointmentsPage/>:active==='Automations'?<AutomationsPage/>:active==='Settings'?<SettingsPage onLogout={onLogout}/>:<><section className="agent-strip">
         <div className="agent-icon"><span></span><Activity size={22}/></div>
         <div className="agent-copy"><div><strong>Meera</strong><span className={live ? 'status live' : 'status'}>{live ? 'Live' : 'Paused'}</span></div><p>Hindi + English · Front desk agent</p></div>
         <div className="agent-stats"><span><b>18</b> calls today</span><i></i><span><b>7</b> bookings</span><i></i><span><b>96%</b> answered</span></div>
@@ -64,6 +68,7 @@ function App() {
         <Metric icon={Clock3} label="Conversation time" value={`${Math.round((dashboard?.metrics?.totalSeconds??0)/60)}m`} delta="Live" note="recorded duration" />
         <Metric icon={Users} label="Human handoffs" value={String(dashboard?.metrics?.handoffs??0)} delta="Live" note="escalated calls" neutral />
       </section>
+      
 
       <section className="grid">
         <div className="panel activity-panel">
@@ -97,5 +102,5 @@ function App() {
 function Metric({icon: Icon,label,value,delta,note,neutral=false}:{icon:React.ElementType,label:string,value:string,delta:string,note:string,neutral?:boolean}) { return <div className="metric"><div className="metric-top"><span>{label}</span><i><Icon size={18}/></i></div><strong>{value}</strong><p><b className={neutral ? 'neutral' : ''}>{neutral ? '' : '↑ '}{delta}</b> {note}</p></div> }
 function Appointment({time,initials,name,service,color}:{time:string,initials:string,name:string,service:string,color:string}) { return <div className="appointment"><time>{time}</time><div className={`mini-avatar ${color}`}>{initials}</div><div><strong>{name}</strong><small>{service}</small></div><button>Details</button></div> }
 
-function Root(){const [session,setSession]=useState<Session|null>(()=>localStorage.getItem('nayi_token')?{token:localStorage.getItem('nayi_token')!,user:JSON.parse(localStorage.getItem('nayi_user')||'{}')}:null);return session?<App/>:<AuthScreen onDone={setSession}/>}
+function Root(){const [session,setSession]=useState<Session|null>(()=>localStorage.getItem('nayi_token')?{token:localStorage.getItem('nayi_token')!,user:JSON.parse(localStorage.getItem('nayi_user')||'{}')}:null);const logout=()=>{localStorage.removeItem('nayi_token');localStorage.removeItem('nayi_user');setSession(null)};return session?<App onLogout={logout}/>:<AuthScreen onDone={setSession}/>}
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Root/></React.StrictMode>);

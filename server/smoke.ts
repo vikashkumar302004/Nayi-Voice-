@@ -33,6 +33,10 @@ if(!toolBooking.success)throw new Error(`Booking tool failed: ${JSON.stringify(t
 const automations=await request(app).get('/api/automations').set('authorization',`Bearer ${token}`).expect(200);
 if(automations.body.rules.length!==3||automations.body.jobs.length<1)throw new Error('Automation rules or reminder job missing');
 await request(app).patch(`/api/automations/${automations.body.rules[1].id}`).set('authorization',`Bearer ${token}`).send({enabled:true,delayMinutes:30}).expect(200);
+const settings=await request(app).get('/api/settings').set('authorization',`Bearer ${token}`).expect(200);
+await request(app).post('/api/settings/password').set('authorization',`Bearer ${token}`).send({currentPassword:'SecurePass123!',newPassword:'NewSecurePass456!'}).expect(200);
+await request(app).post('/api/auth/login').send({email,password:'NewSecurePass456!'}).expect(200);
+const auditLog=await request(app).get('/api/settings').set('authorization',`Bearer ${token}`).expect(200);
 
 console.log(JSON.stringify({
   health:health.body.ok,
@@ -50,4 +54,6 @@ console.log(JSON.stringify({
   ,savedCalls:calls.body.calls.length
   ,automationRules:automations.body.rules.length
   ,queuedJobs:automations.body.jobs.length
+  ,securityHeaders:Boolean(settings.headers['content-security-policy'])
+  ,auditEvents:auditLog.body.audit.length
 }));
