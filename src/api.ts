@@ -29,3 +29,5 @@ export async function transcribeAudio(blob:Blob){
 export const getDashboard = () => api<any>('/dashboard');
 export const startBrowserCall = () => api<{id:string;startedAt:string}>('/calls/browser/start',{method:'POST'});
 export const finishBrowserCall = (id:string,body:object) => api<any>(`/calls/browser/${id}/finish`,{method:'PATCH',body:JSON.stringify(body)});
+export const getAutomations = () => api<any>('/automations');
+export const updateAutomation = (id:string,body:object) => api<any>(`/automations/${id}`,{method:'PATCH',body:JSON.stringify(body)});

@@ -28,6 +28,10 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
     db.prepare('INSERT INTO users (id,workspace_id,name,email,password_hash,created_at) VALUES (?,?,?,?,?,?)').run(userId,workspaceId,input.name,input.email.toLowerCase(),hashPassword(input.password),now);
     db.prepare('INSERT INTO agents (id,workspace_id,name,status,languages,system_prompt,created_at) VALUES (?,?,?,?,?,?,?)').run(agentId,workspaceId,'Meera','paused',JSON.stringify(['hi-IN','en-IN']),'You are a helpful multilingual business receptionist.',now);
     db.prepare('INSERT INTO business_settings (workspace_id,updated_at) VALUES (?,?)').run(workspaceId,now);
+    const automationInsert=db.prepare('INSERT INTO automation_rules (id,workspace_id,type,name,enabled,delay_minutes,channel,message_template,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)');
+    automationInsert.run(randomUUID(),workspaceId,'appointment_reminder','Appointment reminder',1,1440,'dashboard','Hi {{customer}}, this is a reminder for your {{service}} appointment at {{time}}.',now,now);
+    automationInsert.run(randomUUID(),workspaceId,'missed_call','Missed call follow-up',0,5,'dashboard','We noticed your call and will get back to you shortly.',now,now);
+    automationInsert.run(randomUUID(),workspaceId,'post_call','Post-call follow-up',0,60,'dashboard','Thank you for speaking with us. Reply if you need any more help.',now,now);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   res.status(201).json({ token: await createToken(userId,workspaceId,'owner'), user: { id:userId,name:input.name,email:input.email }, workspace: { id:workspaceId,name:input.businessName,industry:input.industry } });
@@ -87,7 +91,24 @@ app.post('/api/appointments', (req,res) => {
   const input=z.object({customerName:z.string().min(2).max(80),service:z.string().min(2).max(100),startsAt:z.string().datetime()}).parse(req.body);
   const appointment={id:randomUUID(),workspaceId:res.locals.auth.workspaceId,createdAt:new Date().toISOString()};
   db.prepare('INSERT INTO appointments (id,workspace_id,customer_name,service,starts_at,status,created_by) VALUES (?,?,?,?,?,?,?)').run(appointment.id,appointment.workspaceId,input.customerName,input.service,input.startsAt,'confirmed','dashboard');
+  scheduleAppointmentReminder(appointment.workspaceId,appointment.id,input);
   res.status(201).json({id:appointment.id,...input,status:'confirmed'});
+});
+
+app.get('/api/automations', (_req,res) => {
+  const workspaceId=res.locals.auth.workspaceId as string;
+  const rules=db.prepare('SELECT id,type,name,enabled,delay_minutes,channel,message_template FROM automation_rules WHERE workspace_id=? ORDER BY created_at').all(workspaceId);
+  const jobs=db.prepare('SELECT id,rule_id,related_type,related_id,status,scheduled_for,error,created_at FROM automation_jobs WHERE workspace_id=? ORDER BY scheduled_for DESC LIMIT 30').all(workspaceId);
+  const counts=db.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed FROM automation_jobs WHERE workspace_id=?`).get(workspaceId);
+  res.json({rules,jobs,counts});
+});
+
+app.patch('/api/automations/:id', (req,res) => {
+  const input=z.object({enabled:z.boolean().optional(),delayMinutes:z.number().int().min(0).max(43200).optional(),channel:z.enum(['dashboard','whatsapp','sms','email']).optional(),messageTemplate:z.string().min(5).max(1000).optional()}).parse(req.body);
+  const current=db.prepare('SELECT * FROM automation_rules WHERE id=? AND workspace_id=?').get(req.params.id,res.locals.auth.workspaceId) as any;
+  if(!current)return res.status(404).json({error:'Automation not found'});
+  db.prepare('UPDATE automation_rules SET enabled=?,delay_minutes=?,channel=?,message_template=?,updated_at=? WHERE id=? AND workspace_id=?').run(input.enabled===undefined?current.enabled:Number(input.enabled),input.delayMinutes??current.delay_minutes,input.channel??current.channel,input.messageTemplate??current.message_template,new Date().toISOString(),req.params.id,res.locals.auth.workspaceId);
+  res.json({saved:true});
 });
 
 app.get('/api/appointments', (_req,res) => {
@@ -204,9 +225,18 @@ export function executeAgentTool(name:string,args:any,workspaceId:string){
     const conflict=db.prepare(`SELECT id FROM appointments WHERE workspace_id=? AND status='confirmed' AND starts_at>=? AND starts_at<? LIMIT 1`).get(workspaceId,new Date(startsAt.getTime()-service.duration_minutes*60000+1).toISOString(),endsAt.toISOString());
     if(conflict)return {success:false,error:'That time is no longer available'};
     const id=randomUUID();db.prepare('INSERT INTO appointments (id,workspace_id,customer_name,service,starts_at,status,created_by) VALUES (?,?,?,?,?,?,?)').run(id,workspaceId,String(args.customerName).slice(0,80),service.name,startsAt.toISOString(),'confirmed','ai');
+    scheduleAppointmentReminder(workspaceId,id,{customerName:String(args.customerName),service:service.name,startsAt:startsAt.toISOString()});
     return {success:true,appointmentId:id,customerName:args.customerName,service:service.name,startsAt:startsAt.toISOString()};
   }
   return {success:false,error:'Unknown tool'};
+}
+
+function scheduleAppointmentReminder(workspaceId:string,appointmentId:string,input:{customerName:string;service:string;startsAt:string}){
+  const rule=db.prepare(`SELECT id,delay_minutes,message_template,channel FROM automation_rules WHERE workspace_id=? AND type='appointment_reminder' AND enabled=1 LIMIT 1`).get(workspaceId) as any;
+  if(!rule)return;
+  const scheduled=new Date(new Date(input.startsAt).getTime()-rule.delay_minutes*60000);
+  if(scheduled.getTime()<=Date.now())return;
+  db.prepare('INSERT INTO automation_jobs (id,workspace_id,rule_id,related_type,related_id,status,scheduled_for,payload,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(randomUUID(),workspaceId,rule.id,'appointment',appointmentId,'pending',scheduled.toISOString(),JSON.stringify({...input,channel:rule.channel,template:rule.message_template}),new Date().toISOString());
 }
 
 app.use((error:any,_req:express.Request,res:express.Response,_next:express.NextFunction) => {

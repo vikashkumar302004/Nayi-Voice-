@@ -30,6 +30,9 @@ const ai = await request(app).post('/api/ai/respond').set('authorization',`Beare
 const bookingDate=new Date(Date.now()+172800000).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
 const toolBooking=appModule.executeAgentTool('book_appointment',{customerName:'Riya',service:'Consultation',startsAt:`${bookingDate}T10:00:00+05:30`},registration.body.workspace.id);
 if(!toolBooking.success)throw new Error(`Booking tool failed: ${JSON.stringify(toolBooking)}`);
+const automations=await request(app).get('/api/automations').set('authorization',`Bearer ${token}`).expect(200);
+if(automations.body.rules.length!==3||automations.body.jobs.length<1)throw new Error('Automation rules or reminder job missing');
+await request(app).patch(`/api/automations/${automations.body.rules[1].id}`).set('authorization',`Bearer ${token}`).send({enabled:true,delayMinutes:30}).expect(200);
 
 console.log(JSON.stringify({
   health:health.body.ok,
@@ -45,4 +48,6 @@ console.log(JSON.stringify({
   ,aiBooking:true
   ,transcriptionProvider:transcription.body.provider
   ,savedCalls:calls.body.calls.length
+  ,automationRules:automations.body.rules.length
+  ,queuedJobs:automations.body.jobs.length
 }));
