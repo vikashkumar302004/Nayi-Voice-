@@ -9,6 +9,7 @@ import './appointments.css';
 import './automations.css';
 import './settings.css';
 import './phone.css';
+import './landing.css';
 import { AuthScreen } from './AuthScreen';
 import { VoiceLab } from './VoiceLab';
 import { getDashboard, Session, setAgentStatus } from './api';
@@ -18,6 +19,7 @@ import { AppointmentsPage } from './AppointmentsPage';
 import { AutomationsPage } from './AutomationsPage';
 import { SettingsPage } from './SettingsPage';
 import { PhoneSetupPage } from './PhoneSetupPage';
+import { LandingPage } from './LandingPage';
 //use for random   caalll  and fornow we can use this for the calls and other things as well
 // some of the data is hardcoded for now but we can use the api to get the data and then use it in the components
 // we ca gs e
@@ -105,5 +107,7 @@ function App({onLogout}:{onLogout:()=>void}) {
 function Metric({icon: Icon,label,value,delta,note,neutral=false}:{icon:React.ElementType,label:string,value:string,delta:string,note:string,neutral?:boolean}) { return <div className="metric"><div className="metric-top"><span>{label}</span><i><Icon size={18}/></i></div><strong>{value}</strong><p><b className={neutral ? 'neutral' : ''}>{neutral ? '' : '↑ '}{delta}</b> {note}</p></div> }
 function Appointment({time,initials,name,service,color}:{time:string,initials:string,name:string,service:string,color:string}) { return <div className="appointment"><time>{time}</time><div className={`mini-avatar ${color}`}>{initials}</div><div><strong>{name}</strong><small>{service}</small></div><button>Details</button></div> }
 
-function Root(){const [session,setSession]=useState<Session|null>(()=>localStorage.getItem('nayi_token')?{token:localStorage.getItem('nayi_token')!,user:JSON.parse(localStorage.getItem('nayi_user')||'{}')}:null);const logout=()=>{localStorage.removeItem('nayi_token');localStorage.removeItem('nayi_user');setSession(null)};return session?<App onLogout={logout}/>:<AuthScreen onDone={setSession}/>}
+function Root(){const [session,setSession]=useState<Session|null>(()=>localStorage.getItem('nayi_token')?{token:localStorage.getItem('nayi_token')!,user:JSON.parse(localStorage.getItem('nayi_user')||'{}')}:null);const [page,setPage]=useState<'landing'|'auth'>('landing');const [authMode,setAuthMode]=useState<'register'|'login'>('register');const logout=()=>{localStorage.removeItem('nayi_token');localStorage.removeItem('nayi_user');setSession(null);setPage('landing')};if(session)return <App onLogout={logout}/>;if(page==='auth')return <AuthScreen initialMode={authMode} onDone={setSession}/>;return <LandingPage onStart={()=>{setAuthMode('register');setPage('auth')}} onLogin={()=>{setAuthMode('login');setPage('auth')}}/>}
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Root/></React.StrictMode>);
+
+if(import.meta.env.PROD&&'serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'));

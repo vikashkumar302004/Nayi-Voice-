@@ -39,6 +39,7 @@ The business owner uses a responsive web application to configure the agent and 
 - Signed Twilio inbound webhook validation and short-lived media-stream tokens
 - Secure Twilio WebSocket media gateway with lifecycle persistence and heartbeat cleanup
 - Gemini Live phone bridge with telephony audio conversion, streaming output, and barge-in clearing
+- Public product landing page, responsive marketing UI, SEO metadata, and installable PWA foundation
 - Groq-powered conversational responses
 - Grounded AI replies using stored services, pricing, hours, and approved FAQs
 - AI tools for checking availability and creating conflict-checked appointments
