@@ -21,6 +21,9 @@ const setup=await request(app).get('/api/setup').set('authorization',`Bearer ${t
 const appointment=await request(app).post('/api/appointments').set('authorization',`Bearer ${token}`).send({customerName:'Test Customer',service:'Consultation',startsAt:new Date(Date.now()+86400000).toISOString()}).expect(201);
 await request(app).patch(`/api/appointments/${appointment.body.id}/status`).set('authorization',`Bearer ${token}`).send({status:'completed'}).expect(200);
 const appointments=await request(app).get('/api/appointments').set('authorization',`Bearer ${token}`).expect(200);
+const browserCall=await request(app).post('/api/calls/browser/start').set('authorization',`Bearer ${token}`).expect(201);
+await request(app).patch(`/api/calls/browser/${browserCall.body.id}/finish`).set('authorization',`Bearer ${token}`).send({summary:'Caller asked about consultation.',outcome:'enquiry_resolved',sentiment:'positive'}).expect(200);
+const calls=await request(app).get('/api/calls').set('authorization',`Bearer ${token}`).expect(200);
 const wav=Buffer.alloc(44+16000*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const transcription=await request(app).post('/api/ai/transcribe').set('authorization',`Bearer ${token}`).set('content-type','audio/wav').send(wav).expect(200);
 const ai = await request(app).post('/api/ai/respond').set('authorization',`Bearer ${token}`).send({message:'Kal appointment chahiye',history:[{role:'user',content:'Kal appointment chahiye'}]}).expect(200);
@@ -41,4 +44,5 @@ console.log(JSON.stringify({
   appointments:appointments.body.appointments.length
   ,aiBooking:true
   ,transcriptionProvider:transcription.body.provider
+  ,savedCalls:calls.body.calls.length
 }));

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, ArrowUpRight, CalendarDays, ChevronDown, Clock3, Headphones, LayoutDashboard, MessageCircle, Phone, PhoneCall, Settings, Sparkles, Users, WandSparkles } from 'lucide-react';
 import './styles.css';
@@ -8,7 +8,7 @@ import './operations.css';
 import './appointments.css';
 import { AuthScreen } from './AuthScreen';
 import { VoiceLab } from './VoiceLab';
-import { Session, setAgentStatus } from './api';
+import { getDashboard, Session, setAgentStatus } from './api';
 import { AgentStudio } from './AgentStudio';
 import { OperationsPage } from './OperationsPage';
 import { AppointmentsPage } from './AppointmentsPage';
@@ -33,6 +33,8 @@ function App() {
   const [active, setActive] = useState<NavKey>('Overview');
   const [live, setLive] = useState(true);
   const [voiceOpen,setVoiceOpen]=useState(false);
+  const [dashboard,setDashboard]=useState<any>(null);
+  useEffect(()=>{void getDashboard().then(setDashboard).catch(()=>{})},[voiceOpen]);
 
   return <div className="shell">
     <aside className="sidebar">
@@ -55,10 +57,10 @@ function App() {
       </section>
 
       <section className="metrics">
-        <Metric icon={PhoneCall} label="Total calls" value="124" delta="12.4%" note="vs. previous week" />
-        <Metric icon={CalendarDays} label="Appointments" value="38" delta="8.1%" note="31% conversion" />
-        <Metric icon={Clock3} label="Time saved" value="9.6h" delta="2.3h" note="this week" />
-        <Metric icon={Users} label="Human handoffs" value="11" delta="8.9%" note="of all calls" neutral />
+        <Metric icon={PhoneCall} label="Total calls" value={String(dashboard?.metrics?.totalCalls??0)} delta="Live" note="database total" />
+        <Metric icon={CalendarDays} label="Appointments" value={String(dashboard?.metrics?.bookings??0)} delta="AI" note="booked from calls" />
+        <Metric icon={Clock3} label="Conversation time" value={`${Math.round((dashboard?.metrics?.totalSeconds??0)/60)}m`} delta="Live" note="recorded duration" />
+        <Metric icon={Users} label="Human handoffs" value={String(dashboard?.metrics?.handoffs??0)} delta="Live" note="escalated calls" neutral />
       </section>
 
       <section className="grid">

@@ -62,6 +62,21 @@ app.get('/api/calls', (_req,res) => {
   res.json({calls:rows});
 });
 
+app.post('/api/calls/browser/start', (_req,res) => {
+  const id=randomUUID();const startedAt=new Date().toISOString();
+  db.prepare(`INSERT INTO calls (id,workspace_id,caller_name,caller_phone,direction,status,outcome,summary,sentiment,duration_seconds,started_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(id,res.locals.auth.workspaceId,'Browser visitor',null,'inbound','in_progress',null,null,'neutral',0,startedAt);
+  res.status(201).json({id,startedAt});
+});
+
+app.patch('/api/calls/browser/:id/finish', (req,res) => {
+  const input=z.object({summary:z.string().max(5000),outcome:z.enum(['enquiry_resolved','appointment_booked','human_handoff','incomplete']),sentiment:z.enum(['positive','neutral','negative']).default('neutral')}).parse(req.body);
+  const call=db.prepare('SELECT started_at FROM calls WHERE id=? AND workspace_id=? AND status=?').get(req.params.id,res.locals.auth.workspaceId,'in_progress') as any;
+  if(!call)return res.status(404).json({error:'Active browser call not found'});
+  const duration=Math.max(1,Math.round((Date.now()-new Date(call.started_at).getTime())/1000));
+  db.prepare('UPDATE calls SET status=?,outcome=?,summary=?,sentiment=?,duration_seconds=? WHERE id=? AND workspace_id=?').run('completed',input.outcome,input.summary,input.sentiment,duration,req.params.id,res.locals.auth.workspaceId);
+  res.json({id:req.params.id,durationSeconds:duration,outcome:input.outcome});
+});
+
 app.get('/api/customers', (_req,res) => {
   const workspaceId=res.locals.auth.workspaceId as string;
   const customers=db.prepare(`SELECT caller_phone phone,MAX(COALESCE(caller_name,'Unknown caller')) name,COUNT(*) total_calls,MAX(started_at) last_contact,SUM(CASE WHEN outcome='appointment_booked' THEN 1 ELSE 0 END) bookings FROM calls WHERE workspace_id=? AND caller_phone IS NOT NULL GROUP BY caller_phone ORDER BY last_contact DESC`).all(workspaceId);

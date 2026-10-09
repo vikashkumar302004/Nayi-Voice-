@@ -10,7 +10,7 @@ async function api<T>(path:string, options:RequestInit = {}):Promise<T> {
 export const register = (body:object) => api<Session>('/auth/register',{method:'POST',body:JSON.stringify(body)});
 export const login = (body:object) => api<Session>('/auth/login',{method:'POST',body:JSON.stringify(body)});
 export const setAgentStatus = (status:'live'|'paused') => api<{status:string}>('/agent/status',{method:'PATCH',body:JSON.stringify({status})});
-export const askAgent = (message:string, history:{role:string;content:string}[]) => api<{reply:string;provider:string}>('/ai/respond',{method:'POST',body:JSON.stringify({message,history})});
+export const askAgent = (message:string, history:{role:string;content:string}[]) => api<{reply:string;provider:string;actions?:string[]}>('/ai/respond',{method:'POST',body:JSON.stringify({message,history})});
 export const getSetup = () => api<any>('/setup');
 export const saveBusiness = (body:object) => api<{saved:boolean}>('/setup/business',{method:'PUT',body:JSON.stringify(body)});
 export const saveAgent = (body:object) => api<{saved:boolean}>('/setup/agent',{method:'PUT',body:JSON.stringify(body)});
@@ -26,3 +26,6 @@ export async function transcribeAudio(blob:Blob){
   const response=await fetch('/api/ai/transcribe',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':blob.type||'audio/webm'},body:blob});
   const body=await response.json();if(!response.ok)throw new Error(body.error??'Transcription failed');return body as {text:string;provider:string};
 }
+export const getDashboard = () => api<any>('/dashboard');
+export const startBrowserCall = () => api<{id:string;startedAt:string}>('/calls/browser/start',{method:'POST'});
+export const finishBrowserCall = (id:string,body:object) => api<any>(`/calls/browser/${id}/finish`,{method:'PATCH',body:JSON.stringify(body)});
