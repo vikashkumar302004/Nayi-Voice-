@@ -8,6 +8,7 @@ import { db, migrate } from './db.js';
 import { createToken, hashPassword, readToken, verifyPassword } from './auth.js';
 import { groqCompletion, groqTranscribe } from './groq.js';
 import { decryptSecret, encryptSecret } from './secrets.js';
+import { createStreamToken, validateTwilioSignature, xmlEscape } from './twilio.js';
 
 migrate();
 const app = express();
@@ -23,6 +24,21 @@ const registerSchema = z.object({ businessName: z.string().min(2).max(80), indus
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(8).max(100) });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'nayi-voice-api', timestamp: new Date().toISOString() }));
+
+app.post('/webhooks/twilio/voice/:workspaceId',express.urlencoded({extended:false,limit:'32kb'}),asyncRoute(async(req,res)=>{
+  const connection=db.prepare(`SELECT account_id,encrypted_secret,phone_number,status FROM provider_connections WHERE workspace_id=? AND provider='twilio'`).get(req.params.workspaceId) as any;
+  if(!connection||connection.status!=='verified')return res.status(404).type('text/xml').send('<Response><Say>Phone service is not configured.</Say></Response>');
+  const publicBase=process.env.PUBLIC_BASE_URL?.replace(/\/$/,'');
+  if(!publicBase)return res.status(503).type('text/xml').send('<Response><Say>Phone service is temporarily unavailable.</Say></Response>');
+  const requestUrl=`${publicBase}/webhooks/twilio/voice/${encodeURIComponent(req.params.workspaceId)}`;
+  const params=Object.fromEntries(Object.entries(req.body as Record<string,unknown>).map(([k,v])=>[k,String(v)]));
+  if(!validateTwilioSignature(requestUrl,params,decryptSecret(connection.encrypted_secret),req.header('x-twilio-signature')))return res.status(403).type('text/xml').send('<Response><Reject reason="rejected"/></Response>');
+  if(params.AccountSid!==connection.account_id)return res.status(403).type('text/xml').send('<Response><Reject reason="rejected"/></Response>');
+  const callSid=params.CallSid??'unknown';const token=await createStreamToken(req.params.workspaceId,callSid);const wsBase=publicBase.replace(/^https:/,'wss:').replace(/^http:/,'ws:');
+  const twiml=`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Namaste. Connecting you to the AI receptionist.</Say><Connect><Stream url="${xmlEscape(`${wsBase}/telephony/stream?token=${token}`)}"/></Connect></Response>`;
+  audit(req.params.workspaceId,undefined,'incoming_call_accepted','call',callSid,{from:params.From?.slice(0,4)+'***'});
+  res.type('text/xml').send(twiml);
+}));
 
 app.post('/api/auth/register',authLimiter,asyncRoute(async (req, res) => {
   const input = registerSchema.parse(req.body);

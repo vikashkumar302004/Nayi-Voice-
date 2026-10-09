@@ -36,6 +36,7 @@ The business owner uses a responsive web application to configure the agent and 
 - Safe automation queue that does not fake external message delivery
 - Security headers, authentication/AI rate limits, password changes, and audit logs
 - Encrypted Twilio connection vault and provider verification UI
+- Signed Twilio inbound webhook validation and short-lived media-stream tokens
 - Groq-powered conversational responses
 - Grounded AI replies using stored services, pricing, hours, and approved FAQs
 - AI tools for checking availability and creating conflict-checked appointments
